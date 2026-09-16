@@ -26,36 +26,23 @@ dsh plugin --profile web add github:Misaka15424/dsh-cost
 2. Hover it for input tokens, output tokens, flash cost, and pro cost.
 3. To switch currency: **DSH Settings > General > Cost currency**, choose CNY / USD (CNY by default). The choice is written to the DSH user-settings document, so it persists on the Host and stays consistent across browsers.
 
-## Updating and uninstalling
-
-```bash
-# Update: re-run the same install command, then restart dsh web
-dsh plugin --profile web add github:Misaka15424/dsh-cost
-
-# Uninstall
-dsh plugin --profile web remove dsh-cost-log
-```
-
-## Features
-
-- Badge stays beside the composer and updates as token usage changes; a pulse dot shows a running turn.
+- The badge updates as token usage changes; a pulse dot shows a running turn.
 - Amounts are rounded to 2 decimals; below 0.01 shows `<0.01`; partially priced totals are marked with `≈`.
 - Tooltip copy and currency names follow the DSH language (Chinese / English); styling follows the light / dark theme.
 - Only DSH's built-in `deepseek-official` DeepSeek models are priced; third-party models are never guessed.
 - No API key access, no balance lookup, no external request, and no database, proxy, or extra daemon.
 
+## Uninstalling
+
+```bash
+dsh plugin --profile web remove dsh-cost-log
+```
+
 ## Rate card
 
-The rate card is chosen by the **request instant**, with CNY and USD each taken from DeepSeek's own page.
+The rate card is chosen by the **request instant**. Rates below are in USD; for CNY see the [Chinese README](./README.md).
 
-Current rates (from 2026-09-10 04:00 UTC), CNY per million tokens:
-
-| Model | Cache hit | Cache miss | Output |
-| --- | --- | --- | --- |
-| `deepseek-flash` | off-peak 0.02 / peak 0.04 | off-peak 1 / peak 2 | off-peak 4 / peak 8 |
-| `deepseek-v4-pro` | off-peak 0.15 / peak 0.30 | off-peak 4.5 / peak 9 | off-peak 13.5 / peak 27 |
-
-Current rates, USD per million tokens:
+Current rates (from 2026-09-10 04:00 UTC), USD per million tokens:
 
 | Model | Cache hit | Cache miss | Output |
 | --- | --- | --- | --- |
@@ -63,10 +50,10 @@ Current rates, USD per million tokens:
 | `deepseek-v4-pro` | off-peak $0.022 / peak $0.044 | off-peak $0.66 / peak $1.32 | off-peak $1.98 / peak $3.96 |
 
 - **Peak hours** are Beijing time **Monday through Friday** `9:00-12:00` and `14:00-18:00`; every other hour (including all weekend hours) is off-peak, at half the peak rate.
-- **Historical requests are priced automatically**, no configuration needed: before `2026-08-17` the legacy flat table applies (Flash `0.02 / 1 / 2`, Pro `0.025 / 3 / 6`); from `2026-08-17` through `2026-09-10 03:59 UTC` the pre-cut peak/off-peak table applies (Flash off-peak `0.05 / 1.5 / 4.5`, peak `0.10 / 3.0 / 9.0`; Pro unchanged).
+- **Historical requests are priced automatically**, no configuration needed: before `2026-08-17` the legacy flat table applies (Flash `$0.0028 / $0.14 / $0.28`, Pro `$0.003625 / $0.435 / $0.87`); from `2026-08-17` through `2026-09-10 03:59 UTC` the pre-cut peak/off-peak table applies (Flash off-peak `$0.007 / $0.22 / $0.66`, peak `$0.014 / $0.44 / $1.32`; Pro unchanged from the table above).
 - **Priced models**: `deepseek-flash` (current official name), `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` (both retired but still routed by DeepSeek to V4.1-Flash and billed at Flash rates), and `deepseek-v4-pro`.
 
-Pricing sources: [official DeepSeek CNY pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) / [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-09-16; the exact instant of the price cut comes from the [DeepSeek-V4.1-Flash release announcement](https://api-docs.deepseek.com/news/news260910) (2026-09-10 04:00 UTC).
+Pricing source: [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-09-16; the exact instant of the price cut comes from the [DeepSeek-V4.1-Flash release announcement](https://api-docs.deepseek.com/news/news260910) (2026-09-10 04:00 UTC).
 
 ## Pricing basis
 

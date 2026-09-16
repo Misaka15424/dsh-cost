@@ -26,27 +26,21 @@ dsh plugin --profile web add github:Misaka15424/dsh-cost
 2. 悬停可查看输入 tokens、输出 tokens、flash 花费、pro 花费。
 3. 切换货币：**DSH 设置 > 通用 > 费用货币**，选择 CNY / USD（默认 CNY）。选择写入 DSH 用户设置文档，随 Host 持久、跨浏览器一致。
 
-## 更新与卸载
-
-```bash
-# 更新：重跑同一条安装命令，然后重启 dsh web
-dsh plugin --profile web add github:Misaka15424/dsh-cost
-
-# 卸载
-dsh plugin --profile web remove dsh-cost-log
-```
-
-## 功能
-
-- 徽标常驻输入框旁，token 用量变化时自动更新；运行中带脉冲点。
+- 徽标随 token 用量自动更新，运行中带脉冲点。
 - 金额四舍五入保留两位小数，不足 0.01 显示为 `<0.01`；含未计价模型时以 `≈` 标记。
 - 提示文案与货币名跟随 DSH 语言（中文 / English），样式跟随明暗主题。
 - 只对 DSH 内置 `deepseek-official` provider 的 DeepSeek 模型计价，不为第三方模型猜价。
 - 不读 API Key、不查账户余额、不发起外部请求，也不需要数据库、代理或额外常驻服务。
 
+## 卸载
+
+```bash
+dsh plugin --profile web remove dsh-cost-log
+```
+
 ## 价格表
 
-按**请求发生时刻**选择价格时代，人民币与美元各自取官方页面报价。
+按**请求发生时刻**选择价格时代。下表为人民币报价，美元报价见 [English README](./README.en.md)。
 
 现行价格（2026-09-10 04:00 UTC 起），人民币 / 百万 tokens：
 
@@ -55,18 +49,11 @@ dsh plugin --profile web remove dsh-cost-log
 | `deepseek-flash` | 空闲 0.02 / 高峰 0.04 | 空闲 1 / 高峰 2 | 空闲 4 / 高峰 8 |
 | `deepseek-v4-pro` | 空闲 0.15 / 高峰 0.30 | 空闲 4.5 / 高峰 9 | 空闲 13.5 / 高峰 27 |
 
-现行价格，美元 / 百万 tokens：
-
-| 模型 | 缓存命中 | 缓存未命中 | 输出 |
-| --- | --- | --- | --- |
-| `deepseek-flash` | 空闲 $0.003 / 高峰 $0.006 | 空闲 $0.15 / 高峰 $0.3 | 空闲 $0.6 / 高峰 $1.2 |
-| `deepseek-v4-pro` | 空闲 $0.022 / 高峰 $0.044 | 空闲 $0.66 / 高峰 $1.32 | 空闲 $1.98 / 高峰 $3.96 |
-
 - **高峰时段**：北京时间**周一至周五** `9:00-12:00`、`14:00-18:00`；其余时间（含周末全天）为空闲，空闲价为高峰价一半。
 - **历史请求自动回溯**，无需设置：`2026-08-17` 之前用旧价格表（Flash `0.02 / 1 / 2`、Pro `0.025 / 3 / 6`，不分峰谷）；`2026-08-17` ~ `2026-09-10 03:59 UTC` 用 Flash 降价前的峰谷表（Flash 空闲 `0.05 / 1.5 / 4.5`、高峰 `0.10 / 3.0 / 9.0`，Pro 与现行相同）。
 - **计价模型**：`deepseek-flash`（现行官方名）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`（后两者已下线，但官方仍将其路由到 V4.1-Flash 并按 Flash 价格计费）与 `deepseek-v4-pro`。
 
-价格来源：[官方中文价格页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) / [官方英文价格页](https://api-docs.deepseek.com/quick_start/pricing)，最后核验 2026-09-16；降价生效时刻取自 [DeepSeek-V4.1-Flash 发布公告](https://api-docs.deepseek.com/news/news260910)（2026-09-10 04:00 UTC）。
+价格来源：[官方中文价格页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)，最后核验 2026-09-16；降价生效时刻取自 [DeepSeek-V4.1-Flash 发布公告](https://api-docs.deepseek.com/news/news260910)（2026-09-10 04:00 UTC）。
 
 ## 计价口径
 
