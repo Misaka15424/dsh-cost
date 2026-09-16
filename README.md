@@ -18,15 +18,23 @@ dsh plugin --profile web add dsh-cost-log
 
 ### 更新
 
-从 npm / GitHub 安装时，重新执行安装命令即可升级：
+**从 npm / GitHub 安装**时，重新执行安装命令即可升级：
 
 ```bash
 dsh plugin --profile web add dsh-cost-log
 ```
 
-若 profile 以**本地源码**方式安装（`"dsh-cost-log": "file:<仓库路径>"`），pnpm 会把包**复制**进
-`node_modules`，且该副本在 lockfile 命中时是惰性的：裸 `pnpm install` 与 `pnpm install --force`
-都只报 `Already up to date`，**不会**刷新已复制的内容。必须**先删掉包目录再装**：
+**本地源码开发推荐用 `link:`**（pnpm 会建一个直指仓库的软链）：装一次之后，改仓库里的代码**立即**生效于
+profile，只需重启 dsh web，不再有任何安装或复制步骤。
+
+```bash
+dsh plugin --profile web add link:/path/to/dsh-cost
+```
+
+`link:` 的代价是依赖按**仓库真实路径**解析，因此仓库自身要先 `npm install`。
+
+若用 `file:`（快照复制：pnpm 会把包拷进 `node_modules`，且副本在 lockfile 命中时是惰性的，裸
+`pnpm install` 与 `pnpm install --force` 都只报 `Already up to date`），则必须**先删掉包目录再装**：
 
 ```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
@@ -34,10 +42,13 @@ Remove-Item node_modules\dsh-cost-log -Recurse -Force
 pnpm install
 ```
 
-`pnpm` 不在 PATH 时按路径调用，例如 `D:\dsWork\.bin\pnpm.cmd install`。
+> 本地源码安装（`link:` / `file:`）不要用**裸名**更新：`dsh plugin --profile web add dsh-cost-log`
+> 会从 npm registry 解析裸名，装成 registry 上的版本并**覆盖** profile 里的 `link:`/`file:` 声明，
+> 从而切断与仓库的关联。
 
-更新后同样需要**重启 dsh web 服务**：Host 半体在进程启动时加载，且本 profile 的 Host 热重载是关闭的
-（`@deepseek-ai/dsh-base/cordis.patch.yml` 中 `id: hmr` 为 `disabled: true`），只有客户端 bundle 走浏览器端 HMR。
+无论哪种方式，更新后都必须**重启 dsh web 服务**：Host 半体在进程启动时加载，且本 profile 的 Host
+热重载是关闭的（`@deepseek-ai/dsh-base/cordis.patch.yml` 中 `id: hmr` 为 `disabled: true`），
+只有客户端 bundle 走浏览器端 HMR。
 
 ## 卸载
 

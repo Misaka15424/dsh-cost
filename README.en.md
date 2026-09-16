@@ -116,17 +116,26 @@ dsh web
 
 ### Updating
 
-When installed from npm or GitHub, re-running the install command upgrades the plugin:
+When installed from **npm or GitHub**, re-running the install command upgrades the plugin:
 
 ```bash
 dsh plugin --profile web add dsh-cost-log
 ```
 
-When the profile installs this package from a **local source checkout**
-(`"dsh-cost-log": "file:<path-to-repo>"`), pnpm **copies** the package into `node_modules`, and that
-copy is lazy while the lockfile entry matches: a plain `pnpm install` or `pnpm install --force` only
-reports `Already up to date` and does **not** refresh the copied files. You must delete the package
-directory first:
+For **local source development, prefer `link:`** (pnpm creates a symlink that points straight at the
+checkout): install once, then edits in the checkout are visible to the profile **immediately** — only a
+dsh web restart is needed, with no install or copy step at all.
+
+```bash
+dsh plugin --profile web add link:/path/to/dsh-cost
+```
+
+The cost of `link:` is that dependencies resolve through the **checkout's real path**, so the checkout
+itself needs `npm install` first.
+
+With `file:` (a snapshot copy: pnpm copies the package into `node_modules`, and that copy is lazy while
+the lockfile entry matches — a plain `pnpm install` or `pnpm install --force` only reports
+`Already up to date`) you must delete the package directory first:
 
 ```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
@@ -134,7 +143,10 @@ Remove-Item node_modules\dsh-cost-log -Recurse -Force
 pnpm install
 ```
 
-If `pnpm` is not on `PATH`, call it by path, e.g. `D:\dsWork\.bin\pnpm.cmd install`.
+> For a local-source install (`link:` / `file:`), do **not** update with the bare name:
+> `dsh plugin --profile web add dsh-cost-log` resolves the bare name from the npm registry, installs
+> that registry version, and **overwrites** the profile's `link:`/`file:` spec — cutting the profile off
+> from your checkout.
 
 Either way you must then **restart the dsh web server**: the Host half loads at process start and Host
 hot reload is disabled in this profile (`id: hmr` is `disabled: true` in
