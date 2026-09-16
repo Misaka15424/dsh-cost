@@ -16,6 +16,29 @@ dsh plugin --profile web add dsh-cost-log
 
 安装后需**重启 dsh web 服务**生效。
 
+### 更新
+
+从 npm / GitHub 安装时，重新执行安装命令即可升级：
+
+```bash
+dsh plugin --profile web add dsh-cost-log
+```
+
+若 profile 以**本地源码**方式安装（`"dsh-cost-log": "file:<仓库路径>"`），pnpm 会把包**复制**进
+`node_modules`，且该副本在 lockfile 命中时是惰性的：裸 `pnpm install` 与 `pnpm install --force`
+都只报 `Already up to date`，**不会**刷新已复制的内容。必须**先删掉包目录再装**：
+
+```powershell
+cd $env:USERPROFILE\.dsh\profiles\web
+Remove-Item node_modules\dsh-cost-log -Recurse -Force
+pnpm install
+```
+
+`pnpm` 不在 PATH 时按路径调用，例如 `D:\dsWork\.bin\pnpm.cmd install`。
+
+更新后同样需要**重启 dsh web 服务**：Host 半体在进程启动时加载，且本 profile 的 Host 热重载是关闭的
+（`@deepseek-ai/dsh-base/cordis.patch.yml` 中 `id: hmr` 为 `disabled: true`），只有客户端 bundle 走浏览器端 HMR。
+
 ## 卸载
 
 ```bash
@@ -29,7 +52,7 @@ dsh plugin --profile web remove dsh-cost-log
 | 优势 | 具体表现 |
 | --- | --- |
 | 会话级持久累计 | 成本在 Host 的 durable session projection 中计算，不依赖浏览器标签页；翻页、上下文压缩和历史补拉都不会改变累计值。 |
-| DeepSeek 专属计价 | 分开计算缓存命中、缓存未命中、缓存写入与输出，并按 Flash / Pro、北京时间峰谷时段、CNY / USD、新旧价格表自动选价。 |
+| DeepSeek 专属计价 | 分开计算缓存命中、缓存未命中、缓存写入与输出，并按 Flash / Pro、请求发生时刻所属的价格时代、北京时间峰谷时段（周一至周五）与 CNY / USD 自动选价。 |
 | 不重复，也不猜价 | 同一 `turn/step` 的 usage 按投影替换规则去重；遇到未知第三方模型只标记未完整计价，不套用可能错误的默认单价。 |
 | 隐私优先，零额外部署 | 不读取 API Key、不查询账户余额、不发送外部请求，也不需要数据库、代理或额外常驻服务。 |
 | 费用就在工作流里 | 徽标常驻输入框旁，发送前后都能看到会话总额；点击才展开明细，并自动跟随 DSH 的语言与明暗主题。 |
@@ -68,7 +91,7 @@ dsh plugin --profile web remove dsh-cost-log
 | 缓存写入 | `cacheWriteTokens`，DeepSeek 不单独报价，按缓存未命中计 |
 | 输出 | `outputTokens`，按“百万 tokens 输出” |
 
-> 金额是依据 provider 上报 token usage 的**参考估算**，不是 DeepSeek 官方账单。usage chunk 与同一 `turn/step` 的 `assistant/message` 会按 projection 替换规则去重，不会重复计费。
+> 金额是依据 provider 上报 token usage 的**参考估算**，不是 DeepSeek 官方账单。同一 `turn/step` 的用量会按 projection 替换规则去重（旧日志里的 `assistant/chunk` usage 与现行的 `assistant/message` usage 都适用），不会重复计费。
 
 ### 生效前价格表
 

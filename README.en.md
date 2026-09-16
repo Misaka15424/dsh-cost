@@ -15,7 +15,7 @@ DSH native plugin: real-time current conversation cost based on DeepSeek pricing
 | Advantage | What it means |
 | --- | --- |
 | Durable conversation totals | Cost is computed in a Host-side durable session projection, not in the browser tab. Paging, context compaction, and history backfill do not change the accumulated value. |
-| DeepSeek-specific pricing | Cache hits, cache misses, cache writes, and output are priced separately, with automatic selection by Flash / Pro, Beijing peak hours, CNY / USD, and legacy / new price tables. |
+| DeepSeek-specific pricing | Cache hits, cache misses, cache writes, and output are priced separately, with automatic selection by Flash / Pro, the pricing era the request instant falls in, Beijing peak hours (Monday to Friday), and CNY / USD. |
 | No double counting or guessed rates | Usage for the same `turn/step` is de-duplicated by projection replacement rules. Unknown third-party models are marked as partially priced instead of receiving a potentially wrong fallback rate. |
 | Privacy-first, zero extra deployment | No API key access, account-balance lookup, external request, database, proxy, or additional daemon is required. |
 | Cost stays in the workflow | The badge remains beside the composer so the conversation total is visible before and after sending. Details open on demand and follow the DSH locale and light / dark theme. |
@@ -54,7 +54,7 @@ Pricing sources: [official DeepSeek CNY pricing](https://api-docs.deepseek.com/z
 | Cache write | `cacheWriteTokens`; DeepSeek does not quote this separately, billed as cache miss |
 | Output | `outputTokens`, billed as 1M output tokens |
 
-> The amount is a reference estimate based on provider-reported token usage, not an official DeepSeek bill. Usage chunks and `assistant/message` for the same `turn/step` are de-duplicated by the projection replacement rules.
+> The amount is a reference estimate based on provider-reported token usage, not an official DeepSeek bill. Usage for the same `turn/step` is de-duplicated by the projection replacement rules (this covers both the legacy `assistant/chunk` usage found in older logs and the current `assistant/message` usage).
 
 ### Pre-effective pricing
 
@@ -113,6 +113,32 @@ Return to the terminal running DSH, press `Ctrl+C` to stop the old process, then
 ```bash
 dsh web
 ```
+
+### Updating
+
+When installed from npm or GitHub, re-running the install command upgrades the plugin:
+
+```bash
+dsh plugin --profile web add dsh-cost-log
+```
+
+When the profile installs this package from a **local source checkout**
+(`"dsh-cost-log": "file:<path-to-repo>"`), pnpm **copies** the package into `node_modules`, and that
+copy is lazy while the lockfile entry matches: a plain `pnpm install` or `pnpm install --force` only
+reports `Already up to date` and does **not** refresh the copied files. You must delete the package
+directory first:
+
+```powershell
+cd $env:USERPROFILE\.dsh\profiles\web
+Remove-Item node_modules\dsh-cost-log -Recurse -Force
+pnpm install
+```
+
+If `pnpm` is not on `PATH`, call it by path, e.g. `D:\dsWork\.bin\pnpm.cmd install`.
+
+Either way you must then **restart the dsh web server**: the Host half loads at process start and Host
+hot reload is disabled in this profile (`id: hmr` is `disabled: true` in
+`@deepseek-ai/dsh-base/cordis.patch.yml`); only client bundles use browser-side HMR.
 
 Uninstall:
 
