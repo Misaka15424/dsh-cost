@@ -22,23 +22,28 @@ DSH native plugin: real-time current conversation cost based on DeepSeek pricing
 
 ## Features
 
-- Always-visible cost badge next to the input box; updates as token usage changes. Currency is configurable in DSH Settings > Plugins > **Plugin configuration** (CNY / USD, default CNY) and stored in the current browser.
+- Always-visible cost badge next to the input box; updates as token usage changes. Currency is configurable in DSH Settings > General > **Cost currency** (CNY / USD, default CNY); the choice is written to the DSH user-settings document, so it persists on the Host and stays consistent across browsers.
 - Tooltip language follows the DSH system language (Chinese / English).
 - Hovering over the cost icon shows only: input tokens, output tokens, flash cost, pro cost.
 - All displayed costs are rounded to 2 decimal places; amounts below 0.01 are shown as `<0.01`.
-- CNY pricing since 2026-08-17:
-  - `deepseek-v4-flash`: off-peak 0.05 / 1.5 / 4.5, peak 0.10 / 3.0 / 9.0 (CNY per million tokens)
-  - `deepseek-v4-pro`: off-peak 0.15 / 4.5 / 13.5, peak 0.30 / 9.0 / 27.0 (CNY per million tokens)
-- Official DeepSeek USD pricing:
-  - `deepseek-v4-flash`: off-peak $0.007 / $0.22 / $0.66, peak $0.014 / $0.44 / $1.32 (USD per million tokens)
+- The rate card is selected by the request instant in three eras (CNY and USD are each taken from DeepSeek's own page):
+  - **Before 2026-08-17**: legacy pricing, no peak/off-peak split.
+  - **2026-08-17 through 2026-09-10 03:59 UTC**: peak/off-peak pricing (before the V4-Flash price cut).
+    - `deepseek-v4-flash`: off-peak 0.05 / 1.5 / 4.5, peak 0.10 / 3.0 / 9.0 (CNY per million tokens)
+    - `deepseek-v4-pro`: off-peak 0.15 / 4.5 / 13.5, peak 0.30 / 9.0 / 27.0 (CNY per million tokens)
+  - **From 2026-09-10 04:00 UTC (current)**: peak/off-peak pricing after the V4.1-Flash price cut.
+    - `deepseek-flash`: off-peak 0.02 / 1 / 4, peak 0.04 / 2 / 8 (CNY per million tokens)
+    - `deepseek-v4-pro`: off-peak 0.15 / 4.5 / 13.5, peak 0.30 / 9.0 / 27.0 (CNY per million tokens)
+- Official DeepSeek USD pricing (current era):
+  - `deepseek-flash`: off-peak $0.003 / $0.15 / $0.6, peak $0.006 / $0.3 / $1.2 (USD per million tokens)
   - `deepseek-v4-pro`: off-peak $0.022 / $0.66 / $1.98, peak $0.044 / $1.32 / $3.96 (USD per million tokens)
-- Peak hours use Beijing time: `9:00-12:00`, `14:00-18:00`; all other hours are off-peak, at half the peak rate.
-- Before the effective time, legacy pricing (both CNY and USD) is used automatically.
-- Pricing is limited to DSH's built-in `deepseek-official` provider with the exact model IDs `deepseek-v4-flash` and `deepseek-v4-pro`, displayed as `DeepSeek-V4-Flash` and `DeepSeek-V4-Pro`.
+- Each triple reads cache hit / cache miss / output; off-peak is half the peak rate.
+- Peak hours are Beijing time **Monday through Friday** `9:00-12:00` and `14:00-18:00`; every other hour (including all weekend hours) is off-peak.
+- Pricing is limited to DSH's built-in `deepseek-official` provider: `deepseek-flash` (the current official name) plus `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, which still route to V4.1-Flash and bill at Flash rates, and `deepseek-v4-pro`.
 - Unrecognized third-party models are never guessed: the badge shows `≈` / `¥0+` (or `≈` / `$0+`).
 - Styles use DSH WebUI design tokens (`--dsw-alias-*`) and follow light / dark themes.
 
-Pricing sources: [official DeepSeek CNY pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) and [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-08-15.
+Pricing sources: [official DeepSeek CNY pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) and [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-09-16. The exact instant of the price cut comes from the [DeepSeek-V4.1-Flash release announcement](https://api-docs.deepseek.com/news/news260910) (2026-09-10 04:00 UTC).
 
 ## Pricing basis
 
@@ -72,19 +77,21 @@ const LEGACY_RATES_USD = {
 
 ```
 Browser (Client)                               DSH Host
-┌────────────────────────────┐   session   ┌──────────────────────────────┐
-│ conversation.input.right    │  projection │ sessionProjections registry  │
-│ cost badge beside input     │ ◄────────── │ costLog projection            │
-│ useProjection('costLog')    │  durable    │  ├ request/header model       │
-│ React + hand-written bundle │             │  ├ assistant/chunk usage     │
-│ locale + localStorage       │             │  └ assistant/message usage   │
-└────────────────────────────┘             │ cost by time x model x tier │
-                                            │ outputs both CNY / USD       │
-                                            └──────────────────────────────┘
+┌──────────────────────────────┐  session    ┌──────────────────────────────┐
+│ conversation.input.right      │  projection │ sessionProjections registry  │
+│ cost badge beside input       │ ◄────────── │ costLog projection            │
+│ useProjection('costLog')      │  durable    │  ├ request/header model       │
+│ settings.general.item         │             │  └ assistant/message usage    │
+│ currency row in General       │             │     (legacy assistant/chunk   │
+│ React + hand-written bundle   │             │      usage still accepted)    │
+│ locale + settingsScope        │  settings   │ cost by time x model x tier   │
+└──────────────────────────────┘ ◄────────── │ outputs both CNY / USD        │
+                                              │ settings namespace `cost-log` │
+                                              └──────────────────────────────┘
 ```
 
-- **Host** ([`lib/index.js`](lib/index.js)): registers the `sessionProjections` key `costLog` and outputs both CNY and USD cost.
-- **Client** ([`lib/client.js`](lib/client.js)): hand-written CJS bundle (`window.__ModuleLoader__.load`), registered in the `conversation.input.right` slot, reads `useProjection('costLog')`, localizes tooltips via the `locale` service, and stores the selected currency in browser local storage.
+- **Host** ([`lib/index.js`](lib/index.js)): registers the `sessionProjections` key `costLog` (`stateSchema` + `wire.viewSchema/view`) and outputs both CNY and USD cost; also registers the user-settings namespace `cost-log` (field `currency`).
+- **Client** ([`lib/client.js`](lib/client.js)): hand-written CJS bundle (`window.__ModuleLoader__.load`) registering two list slots — the cost badge in `conversation.input.right` (reads `useProjection('costLog')`) and the currency row in `settings.general.item`; tooltips localize via the `locale` service, and both entries share one snapshot through `ctx.settingsScope.bind({ namespace: 'cost-log' })`.
 - No external HTTP calls, no cookies, no database, no local server, no build step.
 
 ## Installation
@@ -113,7 +120,7 @@ Uninstall:
 dsh plugin --profile web remove dsh-cost-log
 ```
 
-> Requires DSH runtime capabilities: Host `sessionProjections`; Client `slots`, `locale`, the `react` platform module, and the `conversation.input.right` slot provided by `ui-conversation`.
+> Requires DSH runtime capabilities: Host `sessionProjections` and `settings` (optional); Client `slots`, `locale`, `settingsScope`, the `react` platform module, and the `conversation.input.right` (`ui-conversation`) plus `settings.general.item` (`ui-settings-general`) slots. The Host half additionally needs `@deepseek-ai/schemastery` (settings schema) and `zod` (projection schemas).
 
 ## Quick start
 
@@ -121,28 +128,33 @@ dsh plugin --profile web remove dsh-cost-log
 2. Open any conversation.
 3. The cost badge appears on the right side of the input box; hover to see token usage, click to view the flash / pro cost breakdown.
 
-To switch currency, open DSH Settings > Plugins > **Plugin configuration** and choose CNY or USD.
+To switch currency, open DSH Settings > General and use the **Cost currency** row to choose CNY or USD (the badge and breakdown follow immediately).
 
 ## Files
 
 | File | Description |
 | --- | --- |
-| `lib/index.js` | Host half (`costLog` session projection + peak/off-peak pricing + settings namespace) |
-| `lib/client.js` | Client bundle (cost badge + Plugin configuration currency card) |
+| `lib/index.js` | Host half (`costLog` session projection + peak/off-peak pricing + `cost-log` settings namespace) |
+| `lib/client.js` | Client bundle (cost badge beside the input + currency row in General settings) |
 | `cordis.patch.yml` | Bundle patch (mounts the Host half in the profile layer stack) |
 | `package.json` | Package manifest (`dsh.bundle.patch` + `dsh.client.platform: "web"`) |
+| `CHANGELOG.md` | Release history (DSH 0.1.5 compatibility notes and price eras) |
 | `tests/pricing.test.mjs` | Pricing, model validation, boundary, and projection folding tests |
-| `tests/client.test.mjs` | DSH client module registration regression test |
+| `tests/contract.test.mjs` | Host contract tests (projection definition shape, schema round-trip, settings namespace) |
+| `tests/client.test.mjs` | Client contract tests (slot kind rules, currency wiring, degradation) |
 
-Run tests:
+Run tests (install dependencies first — the Host half uses `@deepseek-ai/schemastery` and `zod`):
 
 ```bash
+npm install
 node --test tests/*.test.mjs
 ```
 
 ## Contributing
 
 Version 1.0.0 is in stable maintenance. New features are out of scope; updates are limited to official DeepSeek pricing changes and DSH compatibility. Keep the English and Chinese README files in sync for user-visible changes.
+
+Whenever the rate card changes you MUST bump `costLogProjection.stateVersion`; otherwise existing sessions keep serving their cached totals at the old prices and only new steps pick up the new ones. `tests/contract.test.mjs` guards this invariant.
 
 ## License
 
