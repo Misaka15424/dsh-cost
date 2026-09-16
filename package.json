@@ -56,13 +56,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kami-mura/dsh-cost.git"
+    "url": "git+https://github.com/Misaka15424/dsh-cost.git"
   },
   "publishConfig": {
     "access": "public"
   },
   "bugs": {
-    "url": "https://github.com/kami-mura/dsh-cost/issues"
+    "url": "https://github.com/Misaka15424/dsh-cost/issues"
   },
-  "homepage": "https://github.com/kami-mura/dsh-cost#readme"
+  "homepage": "https://github.com/Misaka15424/dsh-cost#readme"
 }
