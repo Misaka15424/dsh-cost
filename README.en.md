@@ -13,7 +13,7 @@ A DSH plugin that shows **the current conversation's token usage and estimated c
 - Shows the current conversation's token usage and estimated cost beside the input box, updating as usage changes.
 - Cost is kept in a Host-side **DSH Session Projection** (`costLog`), so paging, compaction, and history backfill never change it.
 - Prices cache hits, cache misses, cache writes, and output separately, and picks the rate card by the request instant.
-- **CNY / USD** switchable; the choice is written to the DSH user-settings document, so it persists on the Host and stays consistent across browsers.
+- **CNY / USD** switchable; the choice persists on the Host (the profile's cordis patch on DSH 0.2+, the user-settings document on 0.1.5) and stays consistent across browsers.
 - Covers the current DeepSeek official models (below); unrecognized third-party models are never guessed and are marked with `≈`.
 - No API key access, no balance lookup, no external request; no build step and no extra daemon.
 
@@ -58,11 +58,11 @@ Current rates (from 2026-09-10 04:00 UTC), USD per million tokens:
 | `deepseek-flash` | off-peak $0.003 / peak $0.006 | off-peak $0.15 / peak $0.3 | off-peak $0.6 / peak $1.2 |
 | `deepseek-v4-pro` | off-peak $0.022 / peak $0.044 | off-peak $0.66 / peak $1.32 | off-peak $1.98 / peak $3.96 |
 
-- **Peak hours** are Beijing time **Monday through Friday** `9:00-12:00` and `14:00-18:00`; every other hour (including all weekend hours) is off-peak, at half the peak rate.
+- **Peak hours** are Beijing time **Monday through Friday** (`9:00-12:00` and `14:00-18:00`) **excluding Chinese public holidays**; every other hour — including all weekend hours, Chinese public holidays in full, and make-up workday weekends — is off-peak, at half the peak rate. The 2026 Mid-Autumn (`09-25 ~ 09-27`) and National Day (`10-01 ~ 10-07`) holiday ranges are registered; new annual schedules ship with a plugin update.
 - **Historical requests are priced automatically**, no configuration needed: before `2026-08-17` the legacy flat table applies (Flash `$0.0028 / $0.14 / $0.28`, Pro `$0.003625 / $0.435 / $0.87`); from `2026-08-17` through `2026-09-10 03:59 UTC` the pre-cut peak/off-peak table applies (Flash off-peak `$0.007 / $0.22 / $0.66`, peak `$0.014 / $0.44 / $1.32`; Pro unchanged from the table above).
 - **Supported models**: `deepseek-flash` (current official name) and `deepseek-v4-pro`, plus `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` — retired, but DeepSeek still routes them to V4.1-Flash and bills them at Flash rates. Only DSH's built-in `deepseek-official` provider is priced.
 
-Pricing source: [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-09-16; the exact instant of the price cut comes from the [DeepSeek-V4.1-Flash release announcement](https://api-docs.deepseek.com/news/news260910) (2026-09-10 04:00 UTC).
+Pricing source: [official DeepSeek USD pricing](https://api-docs.deepseek.com/quick_start/pricing), last verified 2026-10-03; the exact instant of the price cut comes from the [DeepSeek-V4.1-Flash release announcement](https://api-docs.deepseek.com/news/news260910) (2026-09-10 04:00 UTC); the holiday rule is footnote (2) there and in DeepSeek's [statement on make-up workdays and holidays](https://www.cnenergynews.cn/article/4THtHJ0sK55) (2026-09-20), with dates from the [State Council 2026 holiday schedule](https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm).
 
 ### Pricing basis
 
@@ -79,9 +79,10 @@ Pricing source: [official DeepSeek USD pricing](https://api-docs.deepseek.com/qu
 
 | dsh-cost-log | DSH |
 | --- | --- |
-| 1.0.1+ | 0.1.5 or later |
+| 1.0.2+ | 0.1.5 or later (verified on 0.2.0-rc.2) |
+| 1.0.1 | 0.1.5 (the currency row is dead on 0.2.x) |
 
-Adapted and verified against the DSH 0.1.5-rc.2 slot and projection contracts. The upstream `1.0.0` release does not work on DSH 0.1.5+.
+Adapted to the DSH 0.2.0-rc.2 `configForms` / volatile-config contract while keeping the 0.1.5 `settingsScope` + `settings.register` fallback; the slot and projection contracts are verified on both 0.1.5-rc.2 and 0.2.0-rc.2. The upstream `1.0.0` release does not work on DSH 0.1.5+.
 
 ## Upstream
 
@@ -105,10 +106,10 @@ node --test tests/*.test.mjs
 
 Implementation notes:
 
-- `lib/index.js` (Host half): registers the DSH Session Projection key `costLog`, providing `stateSchema` and `wire.viewSchema` / `wire.view` to the registry; also registers the user-settings namespace `cost-log` (field `currency`).
-- `lib/client.js` (client bundle): hand-written CJS bundle (`window.__ModuleLoader__.load`) registering two slots — `conversation.input.right` (the badge) and `settings.general.item` (the currency row) — and talking to DSH through `locale` and `settingsScope`. `cordis.patch.yml` is the patch that adds it to the profile layer stack.
-- Runtime capabilities required (all built into DSH): Host `sessionProjections` and optionally `settings`; browser `slots`, `locale`, `settingsScope`, and the `react` platform module. The Host half also needs `@deepseek-ai/schemastery` and `zod`, pulled in by the install.
-- Maintenance rule: whenever the rate card changes you **must** bump `costLogProjection.stateVersion`; otherwise existing sessions keep serving their cached totals at the old prices and only new steps pick up the new ones (`tests/contract.test.mjs` guards this). Keep the English and Chinese READMEs in sync for user-visible changes.
+- `lib/index.js` (Host half): registers the DSH Session Projection key `costLog`, providing `stateSchema` and `wire.viewSchema` / `wire.view` to the registry; it also exports `Config` (with `currency` marked `.volatile()`) so the DSH 0.2+ settings page can project it by profile entry id, falling back to registering the `cost-log` user-settings namespace on 0.1.5 and earlier.
+- `lib/client.js` (client bundle): hand-written CJS bundle (`window.__ModuleLoader__.load`) registering two slots — `conversation.input.right` (the badge) and `settings.general.item` (the currency row) — reading and writing the currency through `configForms` (0.2+) or `settingsScope` (0.1.5), with copy from `locale`. `cordis.patch.yml` is the patch that adds it to the profile layer stack, and its `id: cost-log` doubles as the 0.2 settings-form namespace.
+- Runtime capabilities required (all built into DSH): Host `sessionProjections` and optionally `settings`; browser `slots`, `locale`, `configForms` (0.2+) / `settingsScope` (0.1.5), and the `react` platform module. The Host half also needs `@deepseek-ai/schemastery` (≥ 3.18.4, where `volatile()` exists) and `zod`, pulled in by the install.
+- Maintenance rule: whenever the rate card **or the holiday calendar** changes you **must** bump `costLogProjection.stateVersion`; otherwise existing sessions keep serving their cached totals at the old prices and only new steps pick up the new ones (`tests/contract.test.mjs` guards this). When a new annual holiday schedule is published, add it to `CN_HOLIDAY_RANGES` in both `lib/index.js` and `lib/client.js`. Keep the English and Chinese READMEs in sync for user-visible changes.
 
 ## License
 

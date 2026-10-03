@@ -59,10 +59,17 @@ function createSlots() {
   }
 }
 
-function createHarness({ withSettings = true, snapshot = READY_USD } = {}) {
+/**
+ * 迷你设置后端：
+ * - `configForms`（DSH 0.2+，按 profile 条目 id 取 volatile 配置表单）；
+ * - `settingsScope`（DSH 0.1.5 及以前，按命名空间绑定用户设置文档）；
+ * - `none`：两者都缺席，插件只应注册徽标。
+ */
+function createHarness({ backend = 'configForms', snapshot = READY_USD } = {}) {
   const slots = createSlots()
   const dictionaries = []
   const writes = []
+  const requested = []
   const scope = {
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
@@ -83,7 +90,22 @@ function createHarness({ withSettings = true, snapshot = READY_USD } = {}) {
           bind: (ns) => (key) => `${ns}.${key}`,
         }
       }
-      if (name === 'settingsScope') return withSettings ? { bind: () => scope } : undefined
+      if (name === 'configForms' && backend === 'configForms') {
+        return {
+          get(namespace) {
+            requested.push(namespace)
+            return scope
+          },
+        }
+      }
+      if (name === 'settingsScope' && backend === 'settingsScope') {
+        return {
+          bind(spec) {
+            requested.push(spec.namespace)
+            return scope
+          },
+        }
+      }
       return undefined
     },
     effect(callback) {
@@ -91,10 +113,10 @@ function createHarness({ withSettings = true, snapshot = READY_USD } = {}) {
       return typeof disposer === 'function' ? disposer : () => {}
     },
   }
-  return { ctx, slots, dictionaries, writes }
+  return { ctx, slots, dictionaries, writes, requested }
 }
 
-async function loadBundle() {
+async function loadBundle({ dateNow } = {}) {
   const code = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   let handoff
   const window = {
@@ -108,7 +130,14 @@ async function loadBundle() {
     createElement: () => ({ dataset: {}, parentNode: null, textContent: '' }),
     head: { appendChild() {} },
   }
-  vm.runInNewContext(code, { window, document, console })
+  const sandbox = { window, document, console }
+  if (dateNow !== undefined) {
+    // 只冻结 Date.now()，构造与解析仍走真实实现。
+    sandbox.Date = class extends Date {
+      static now() { return dateNow }
+    }
+  }
+  vm.runInNewContext(code, sandbox)
   return handoff
 }
 
@@ -189,8 +218,20 @@ test('注册两个 list 槽（徽标 + 通用设置行），不再触碰 keyed �
   )
 })
 
-test('缺少 settingsScope 时只注册徽标，且货币回落默认值', async () => {
-  const { ctx, slots } = createHarness({ withSettings: false })
+test('DSH 0.2+ 经 configForms 按条目 id 取表单（货币行照常注册）', async () => {
+  const { ctx, slots, requested, writes } = createHarness()
+  createPlugin(await loadBundle()).apply(ctx)
+
+  assert.deepEqual(requested, ['cost-log'])
+  const row = slots.faceOf('settings.general.item')
+  const tree = row.component(composeProps(row.options.inject(), { t: (key) => key }))
+  assert.equal(tree.children[1].props.value, 'USD')
+  tree.children[1].props.onChange({ target: { value: 'CNY' } })
+  assert.deepEqual(writes, [['currency', 'CNY']])
+})
+
+test('缺少设置服务（configForms / settingsScope 均无）时只注册徽标，且货币回落默认值', async () => {
+  const { ctx, slots } = createHarness({ backend: 'none' })
   createPlugin(await loadBundle()).apply(ctx)
 
   assert.deepEqual(slots.registrations.map((entry) => entry.name), ['conversation.input.right'])
@@ -203,6 +244,54 @@ test('缺少 settingsScope 时只注册徽标，且货币回落默认值', async
     t: (key) => key,
   }))
   assert.equal(amountText(tree), '¥6.00')
+})
+
+test('DSH 0.1.5 的 settingsScope 后端仍可用（旧版本回退路径）', async () => {
+  const { ctx, slots, requested } = createHarness({ backend: 'settingsScope', snapshot: READY_CNY })
+  createPlugin(await loadBundle()).apply(ctx)
+
+  assert.deepEqual(requested, ['cost-log'])
+  const badge = slots.faceOf('conversation.input.right')
+  const view = { complete: true, cost: 6, costUsd: 0.84, tokens: {}, byModel: [], latest: null }
+  const tree = badge.component(composeProps(badge.options.inject(), {
+    useProjection: () => view,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+  assert.equal(amountText(tree), '¥6.00')
+})
+
+test('提示文案的当前时段跟随法定节假日（客户端与 Host 同一份口径）', async () => {
+  const holiday = Date.UTC(2026, 9, 1, 2) // 2026-10-01 北京 10:00（周四），节内空闲
+  const workday = Date.UTC(2026, 9, 8, 2) // 2026-10-08 北京 10:00（周四），节后高峰
+  const makeView = () => ({
+    complete: true,
+    cost: 1,
+    costUsd: 0.2,
+    tokens: {},
+    byModel: [],
+    latest: { model: 'deepseek-v4-pro', rate: null, rateUsd: null },
+  })
+
+  const holidayHarness = createHarness()
+  createPlugin(await loadBundle({ dateNow: holiday })).apply(holidayHarness.ctx)
+  const holidayBadge = holidayHarness.slots.faceOf('conversation.input.right')
+  const holidayTree = holidayBadge.component(composeProps(holidayBadge.options.inject(), {
+    useProjection: makeView,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+  assert.match(holidayTree.children[0].props['aria-label'], /currentNew · offpeak/)
+
+  const workdayHarness = createHarness()
+  createPlugin(await loadBundle({ dateNow: workday })).apply(workdayHarness.ctx)
+  const workdayBadge = workdayHarness.slots.faceOf('conversation.input.right')
+  const workdayTree = workdayBadge.component(composeProps(workdayBadge.options.inject(), {
+    useProjection: makeView,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+  assert.match(workdayTree.children[0].props['aria-label'], /currentNew · peak/)
 })
 
 test('徽标按 Host 设置里的货币渲染金额', async () => {

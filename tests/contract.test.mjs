@@ -4,10 +4,12 @@
 //     视图缺失会让投影被当作 host-only，客户端永远拿不到值）；
 // 2) settings.register 需要的 schemastery schema 与命名空间格式。
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   CURRENCIES,
   CURRENCY_FIELD,
+  Config,
   CostLogSettingsSchema,
   DEFAULT_CURRENCY,
   SETTINGS_NAMESPACE,
@@ -54,7 +56,8 @@ test('投影定义满足现行 ProjectionDefinition 契约', () => {
   )
   // 价格表调整会改变同一事件的折叠结果，因此必须递增 stateVersion，让持久化
   // cache 行失效并整体重折；否则旧会话会沿用旧价、只有新步骤用新价。
-  assert.ok(costLogProjection.stateVersion >= 3, '计价规则变更后 stateVersion 应已递增')
+  // v4：高峰时段排除中国法定节假日。
+  assert.ok(costLogProjection.stateVersion >= 4, '计价规则变更后 stateVersion 应已递增')
 })
 
 test('投影状态可 JSON 往返并通过 stateSchema（projection cache 前置条件）', () => {
@@ -118,6 +121,54 @@ test('设置 schema 可被 describe 序列化，并应用默认值与校验', ()
   assert.deepEqual(CostLogSettingsSchema({}), { [CURRENCY_FIELD]: DEFAULT_CURRENCY })
   assert.deepEqual(CostLogSettingsSchema({ [CURRENCY_FIELD]: 'USD' }), { [CURRENCY_FIELD]: 'USD' })
   assert.throws(() => CostLogSettingsSchema({ [CURRENCY_FIELD]: 'EUR' }))
+})
+
+test('DSH 0.2+ 的设置表单 Config 只暴露 volatile 的货币字段', () => {
+  // 0.2 起设置页按条目 id 投影插件 Config 里标了 .volatile() 的字段；
+  // 漏标就会整条不出现在设置页（客户端 configForms 只会拿到 unavailable）。
+  assert.equal(typeof Config, 'function')
+  // volatile 字段解析成可写引用（与 DSH 自带的设置型插件同形）。
+  const value = Config({})
+  assert.equal(typeof value[CURRENCY_FIELD].get, 'function')
+  assert.equal(value[CURRENCY_FIELD].get(), DEFAULT_CURRENCY)
+  assert.throws(() => Config({ [CURRENCY_FIELD]: 'EUR' }))
+  assert.match(JSON.stringify(Config.toJSON()), /"volatile":true/)
+})
+
+test('设置命名空间等于 profile 条目 id（0.2 按条目 id 寻址表单）', async () => {
+  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  const entryId = /^\s*-\s*id:\s*(\S+)\s*$/m.exec(patch)?.[1]
+  assert.equal(entryId, SETTINGS_NAMESPACE)
+})
+
+test('Host apply：0.2 声明 auto:false，0.1.5 退回 settings.register', async () => {
+  const { default: plugin } = await import('../lib/index.js')
+  const makeCtx = (settings) => ({
+    fiber: { uid: 1 },
+    get: (name) => (name === 'sessionProjections' ? { register: () => () => {} } : undefined),
+    effect: (callback) => {
+      const disposer = callback()
+      return typeof disposer === 'function' ? disposer : () => {}
+    },
+    inject: (names, callback) => {
+      if (names.includes('settings')) callback({ settings, effect: (fn) => fn() })
+    },
+  })
+
+  // 0.2 形态：设置服务只有 configure —— 必须声明本条目不要自动生成表单页。
+  const configured = []
+  plugin.apply(makeCtx({
+    configure: (presentation, owner) => {
+      configured.push([presentation, owner])
+      return () => {}
+    },
+  }))
+  assert.deepEqual(configured, [[{ auto: false }, { uid: 1 }]])
+
+  // 0.1.5 形态：设置服务只有 register —— 注册用户设置命名空间。
+  const registered = []
+  plugin.apply(makeCtx({ register: (namespace) => registered.push(namespace) }))
+  assert.deepEqual(registered, [SETTINGS_NAMESPACE])
 })
 
 test('峰谷边界仍按 step/start 时刻计价', () => {

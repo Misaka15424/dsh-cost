@@ -5,6 +5,7 @@ import {
   EFFECTIVE_AT_MS_2,
   costLogProjection,
   familyOf,
+  isChineseHoliday,
   isOfficialDeepSeekModel,
   isPeakAt,
   pricePointAt,
@@ -93,6 +94,45 @@ test('高峰时段仅限北京时间周一至周五，周末全天空闲', () =>
   assert.equal(isPeakAt(bj(8, 13, 15, 0)), false)
   // 2026-09-14 周一恢复高峰。
   assert.equal(isPeakAt(bj(8, 14, 10, 0)), true)
+})
+
+test('中国法定节假日（含工作日）全天按空闲时段', () => {
+  const bj = (month, day, hour, minute = 0) => Date.UTC(2026, month, day, hour - 8, minute)
+  // 国庆 2026-10-01（周四）至 10-07（周三）全程空闲。
+  assert.equal(isPeakAt(bj(9, 1, 10, 0)), false)
+  assert.equal(isPeakAt(bj(9, 1, 15, 0)), false)
+  assert.equal(isPeakAt(bj(9, 7, 10, 0)), false)
+  // 中秋 2026-09-25（周五）至 09-27 全程空闲。
+  assert.equal(isPeakAt(bj(8, 25, 10, 0)), false)
+  // 节前 09-24（周四）、节后 10-08（周四）照常高峰；节间 10-07 23:59 之后翻篇。
+  assert.equal(isPeakAt(bj(8, 24, 10, 0)), true)
+  assert.equal(isPeakAt(bj(9, 8, 10, 0)), true)
+  assert.equal(isPeakAt(Date.UTC(2026, 9, 7, 15, 59)), false) // 北京 10-07 23:59
+  assert.equal(isPeakAt(Date.UTC(2026, 9, 8, 1, 0)), true) // 北京 10-08 09:00
+  // 调休上班的周末（09-20 周日、10-10 周六）本就在周末规则下空闲。
+  assert.equal(isPeakAt(bj(8, 20, 10, 0)), false)
+  assert.equal(isPeakAt(bj(9, 10, 10, 0)), false)
+})
+
+test('节假日判定按北京时间日期，且只登记放假区间', () => {
+  assert.equal(isChineseHoliday(Date.UTC(2026, 8, 25, 2)), true) // 北京 09-25 10:00
+  assert.equal(isChineseHoliday(Date.UTC(2026, 9, 7, 2)), true) // 北京 10-07 10:00
+  assert.equal(isChineseHoliday(Date.UTC(2026, 9, 7, 16)), false) // 北京 10-08 00:00
+  assert.equal(isChineseHoliday(Date.UTC(2026, 8, 24, 2)), false) // 北京 09-24 10:00
+  assert.equal(isChineseHoliday(Date.UTC(2026, 9, 10, 2)), false) // 北京 10-10 10:00（调休上班的周六）
+})
+
+test('节假日走空闲价卡，节前节后同一时刻走高峰价卡', () => {
+  // 北京 10:00：10-01（节内）空闲，10-08（节后）高峰。
+  assert.deepEqual(pricePointAt('deepseek-flash', Date.UTC(2026, 9, 1, 2)), {
+    mode: 'offpeak', inputHit: 0.02, inputMiss: 1, output: 4,
+  })
+  assert.deepEqual(pricePointAt('deepseek-flash', Date.UTC(2026, 9, 8, 2)), {
+    mode: 'peak', inputHit: 0.04, inputMiss: 2, output: 8,
+  })
+  assert.deepEqual(usdPricePointAt('deepseek-v4-pro', Date.UTC(2026, 9, 1, 2)), {
+    mode: 'offpeak', inputHit: 0.022, inputMiss: 0.66, output: 1.98,
+  })
 })
 
 test('2026-09-10 04:00 UTC 起 Flash 使用降价后的新价卡', () => {
@@ -379,4 +419,22 @@ test('同一会话跨降价点：前段用旧价卡、后段用新价卡', () =>
   // 降价前高峰输出 9 元/M + 降价后高峰输出 8 元/M
   assert.equal(value.cost, 17)
   assert.equal(value.latest.rate.inputHit, 0.04) // 最近一次走新价卡
+})
+
+test('节假日高峰窗口内的请求按空闲价折叠', () => {
+  let state = costLogProjection.init()
+  const at = Date.UTC(2026, 9, 1, 2) // 2026-10-01（国庆）北京 10:00，本应是高峰窗口
+  state = costLogProjection.apply(state, event('request/header', 0, at - 10, {
+    header: { config: { provider: 'deepseek-official', model: 'deepseek-flash' }, reason: 'initial' },
+  }))
+  state = costLogProjection.apply(state, event('assistant/message', 1, at, {
+    turn: 1,
+    step: 1,
+    message: { source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-flash' } },
+    usage: usage(1_000_000, 1_000_000),
+  }))
+  const value = costLogProjection.wire.view(state)
+  assert.equal(value.cost, 5) // 空闲：未命中 1 + 输出 4 元
+  assert.equal(value.costUsd, 0.75)
+  assert.equal(value.latest.rate.mode, 'offpeak')
 })

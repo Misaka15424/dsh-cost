@@ -13,7 +13,7 @@ DSH 插件：在输入框旁显示**当前对话的 Token 消耗与估算费用*
 - 在输入框旁显示当前对话的 Token 消耗与估算费用，用量变化时自动更新。
 - 费用由 Host 侧的 **DSH Session Projection**（`costLog`）保存，不随翻页、压缩或历史补拉变化。
 - 分开计价缓存命中 / 缓存未命中 / 缓存写入 / 输出，并按请求发生时刻选择价格时代。
-- 支持 **CNY / USD** 切换，选择写入 DSH 用户设置文档，随 Host 持久、跨浏览器一致。
+- 支持 **CNY / USD** 切换，选择由 Host 持久（DSH 0.2+ 写入 profile 的 cordis patch，0.1.5 为用户设置文档），跨浏览器一致。
 - 支持当前 DeepSeek 官方模型（见下）；未识别的第三方模型不猜价，以 `≈` 标记。
 - 不读 API Key、不查账户余额、不发起外部请求；无构建步骤、无额外常驻服务。
 
@@ -57,11 +57,11 @@ dsh plugin --profile web remove dsh-cost-log
 | `deepseek-flash` | 空闲 0.02 / 高峰 0.04 | 空闲 1 / 高峰 2 | 空闲 4 / 高峰 8 |
 | `deepseek-v4-pro` | 空闲 0.15 / 高峰 0.30 | 空闲 4.5 / 高峰 9 | 空闲 13.5 / 高峰 27 |
 
-- **高峰时段**：北京时间**周一至周五** `9:00-12:00`、`14:00-18:00`；其余时间（含周末全天）为空闲，空闲价为高峰价一半。
+- **高峰时段**：北京时间**周一至周五**（**不含中国法定节假日**）`9:00-12:00`、`14:00-18:00`；其余时间（含周末、法定节假日全天、调休上班的周末）为空闲，空闲价为高峰价一半。已登记 2026 年中秋（`09-25 ~ 09-27`）与国庆（`10-01 ~ 10-07`）放假区间，新年度安排公布后随插件更新。
 - **历史请求自动回溯**，无需设置：`2026-08-17` 之前用旧价格表（Flash `0.02 / 1 / 2`、Pro `0.025 / 3 / 6`，不分峰谷）；`2026-08-17` ~ `2026-09-10 03:59 UTC` 用 Flash 降价前的峰谷表（Flash 空闲 `0.05 / 1.5 / 4.5`、高峰 `0.10 / 3.0 / 9.0`，Pro 与现行相同）。
 - **支持模型**：`deepseek-flash`（现行官方名）与 `deepseek-v4-pro`，以及已下线但仍被官方路由到 V4.1-Flash 并按 Flash 价格计费的 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`。只对 DSH 内置 `deepseek-official` provider 计价。
 
-价格来源：[官方中文价格页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)，最后核验 2026-09-16；降价生效时刻取自 [DeepSeek-V4.1-Flash 发布公告](https://api-docs.deepseek.com/news/news260910)（2026-09-10 04:00 UTC）。
+价格来源：[官方中文价格页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)，最后核验 2026-10-03；降价生效时刻取自 [DeepSeek-V4.1-Flash 发布公告](https://api-docs.deepseek.com/news/news260910)（2026-09-10 04:00 UTC）；节假日口径见该页脚注(2)与 [DeepSeek 关于调休/节假日计费的说明](https://www.cnenergynews.cn/article/4THtHJ0sK55)（2026-09-20），放假日期依据[国务院办公厅关于 2026 年部分节假日安排的通知](https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm)（国办发明电〔2025〕7 号）。
 
 ### 计价口径
 
@@ -78,9 +78,12 @@ dsh plugin --profile web remove dsh-cost-log
 
 | dsh-cost-log | DSH |
 | --- | --- |
-| 1.0.1+ | 0.1.5 及以上 |
+| 1.0.2+ | 0.1.5 及以上（已在 0.2.0-rc.2 上验证） |
+| 1.0.1 | 0.1.5（0.2.x 下货币设置行失效） |
 
-针对 DSH 0.1.5-rc.2 的插槽与投影契约适配并验证。上游 `1.0.0` 不适用于 DSH 0.1.5+。
+针对 DSH 0.2.0-rc.2 的 `configForms` / volatile 配置契约适配，并保留 0.1.5 的
+`settingsScope` + `settings.register` 回退路径；插槽与投影契约在 0.1.5-rc.2 与
+0.2.0-rc.2 上均验证。上游 `1.0.0` 不适用于 DSH 0.1.5+。
 
 ## 上游
 
@@ -104,10 +107,10 @@ node --test tests/*.test.mjs
 
 实现要点：
 
-- `lib/index.js`（Host 半体）：注册 DSH Session Projection 键 `costLog`，向 registry 提供 `stateSchema` 与 `wire.viewSchema` / `wire.view`；同时注册用户设置命名空间 `cost-log`（`currency` 字段）。
-- `lib/client.js`（Client bundle）：手写 CJS bundle（`window.__ModuleLoader__.load`），注册 `conversation.input.right`（徽标）与 `settings.general.item`（货币行）两个插槽，经 `locale` 与 `settingsScope` 与 DSH 交互。`cordis.patch.yml` 是把它加入 profile 层栈的 patch。
-- 运行所需能力（均为 DSH 内置）：Host `sessionProjections`、`settings`（可选）；Client `slots`、`locale`、`settingsScope`、`react` 平台模块。Host 侧另需 `@deepseek-ai/schemastery` 与 `zod`，安装时自动带出。
-- 维护约定：调整价格表时**必须同时递增** `costLogProjection.stateVersion`，否则已有会话会沿用缓存里的旧价、只有新步骤用新价（`tests/contract.test.mjs` 有守护断言）。修改用户可见内容时请同步更新中英文 README。
+- `lib/index.js`（Host 半体）：注册 DSH Session Projection 键 `costLog`，向 registry 提供 `stateSchema` 与 `wire.viewSchema` / `wire.view`；同时导出 `Config`（`currency` 标为 `.volatile()`）供 DSH 0.2+ 的设置页按条目 id 投影，0.1.5 及以前则退回注册用户设置命名空间 `cost-log`。
+- `lib/client.js`（Client bundle）：手写 CJS bundle（`window.__ModuleLoader__.load`），注册 `conversation.input.right`（徽标）与 `settings.general.item`（货币行）两个插槽；货币经 `configForms`（0.2+）或 `settingsScope`（0.1.5）读写，文案走 `locale`。`cordis.patch.yml` 是把它加入 profile 层栈的 patch，其中的 `id: cost-log` 同时就是 0.2 的设置表单命名空间。
+- 运行所需能力（均为 DSH 内置）：Host `sessionProjections`、`settings`（可选）；Client `slots`、`locale`、`configForms`（0.2+）/ `settingsScope`（0.1.5）、`react` 平台模块。Host 侧另需 `@deepseek-ai/schemastery`（≥ 3.18.4，`volatile()` 所在版本）与 `zod`，安装时自动带出。
+- 维护约定：调整价格表**或节假日口径**时必须同时递增 `costLogProjection.stateVersion`，否则已有会话会沿用缓存里的旧价、只有新步骤用新价（`tests/contract.test.mjs` 有守护断言）。新年度的法定节假日安排公布后，要在 `lib/index.js` 与 `lib/client.js` 的 `CN_HOLIDAY_RANGES` 中同步追加。修改用户可见内容时请同步更新中英文 README。
 
 ## License
 
