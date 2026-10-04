@@ -4,7 +4,7 @@
 
 ## 1.0.2
 
-跟随 DSH 0.2.0 的设置服务变更修复货币设置，并同步 DeepSeek 官方「中国法定节假日」计价口径。
+跟随 DSH 0.2.0 的设置服务变更修复货币设置、把设置行改成原生样式，并同步 DeepSeek 官方「中国法定节假日」计价口径。
 
 ### 修复：DSH 0.2.x 下设置项整体失效
 
@@ -22,6 +22,17 @@
   再生成一张重复的表单。0.1.5 的 `settings.register` 路径保留为能力探测分支。
 - 依赖下限 `@deepseek-ai/schemastery` `^3.18.2` → `^3.18.4`（`Schema.prototype.volatile`
   自该版本起提供）。
+
+### 界面
+
+- **设置行的控件改用原生样式。** 货币选择原本是自绘的 `<select>`（`1px` 边框 + `18px`
+  圆角药丸），与「设置 > 通用」里原生行的观感不一致。现在与 `ui-chat` 的
+  `PreferenceRow`、`locale` 的 `LanguageRow` 同款：`.5px` 分隔线、相同的标题/说明字号
+  与内边距，右侧是显示当前值的 `button` + chevron，选项交给
+  `@deepseek-ai/dsh-client-ui-primitives` 的 `Menu` 渲染（该包原本就在 manifest 的
+  `dsh.client.inject` 里）。
+- 两份 README 重写为简短介绍：功能列表、计费范围、安装/卸载、要求、致谢；价格表与
+  实现细节只保留在本文件与源码注释里。
 
 ### 价格口径
 

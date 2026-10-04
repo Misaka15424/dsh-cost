@@ -31,6 +31,9 @@ function createReact() {
     useSyncExternalStore(_subscribe, getSnapshot) {
       return getSnapshot()
     },
+    useState(initial) {
+      return [initial, () => {}]
+    },
   }
 }
 
@@ -144,7 +147,13 @@ async function loadBundle({ dateNow } = {}) {
 function createPlugin(handoff) {
   return handoff.factory((id) => {
     if (id === 'react') return createReact()
-    if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Tooltip: function Tooltip() {} }
+    if (id === '@deepseek-ai/dsh-client-ui-primitives') {
+      return {
+        Tooltip: function Tooltip() {},
+        Menu: function Menu() {},
+        IconChevronDownOutlineRegular: function IconChevronDownOutlineRegular() {},
+      }
+    }
     throw new Error(`客户端 bundle 依赖了非平台模块: ${id}`)
   })
 }
@@ -225,8 +234,9 @@ test('DSH 0.2+ 经 configForms 按条目 id 取表单（货币行照常注册）
   assert.deepEqual(requested, ['cost-log'])
   const row = slots.faceOf('settings.general.item')
   const tree = row.component(composeProps(row.options.inject(), { t: (key) => key }))
-  assert.equal(tree.children[1].props.value, 'USD')
-  tree.children[1].props.onChange({ target: { value: 'CNY' } })
+  const menu = menuOf(tree)
+  assert.equal(menu.props.selectedId, 'USD')
+  menu.props.onSelect('CNY')
   assert.deepEqual(writes, [['currency', 'CNY']])
 })
 
@@ -339,36 +349,52 @@ test('不可计价部分用 ≈ 前缀提示', async () => {
   assert.equal(amountText(tree), '≈¥1.50')
 })
 
-test('设置行跟随 Host 快照，并把选择写回设置命名空间', async () => {
+/** 取设置行右侧的 Menu 元素（原生 PreferenceRow 同款：button + chevron + Menu）。 */
+function menuOf(rowTree) {
+  return rowTree.children[1]
+}
+
+test('设置行是原生设置行同款结构，并把选择写回设置命名空间', async () => {
   const { ctx, slots, writes } = createHarness({ snapshot: READY_USD })
   createPlugin(await loadBundle()).apply(ctx)
 
   const row = slots.faceOf('settings.general.item')
   const tree = row.component(composeProps(row.options.inject(), { t: (key) => key }))
 
-  assert.equal(tree.props.className, 'dcl-settings-row')
-  assert.equal(tree.children[1].props.value, 'USD')
-  assert.equal(tree.children[1].props.disabled, false)
-  assert.deepEqual(
-    childrenOf(tree.children[1]).map((option) => option.props.value),
-    ['CNY', 'USD'],
-  )
+  assert.equal(tree.props.className, 'dcl-row')
+  assert.equal(tree.children[0].props.className, 'dcl-row-text')
 
-  tree.children[1].props.onChange({ target: { value: 'CNY' } })
+  const menu = menuOf(tree)
+  assert.deepEqual(Array.from(menu.props.items, (item) => item.id), ['CNY', 'USD'])
+  assert.equal(menu.props.selectedId, 'USD')
+  assert.equal(menu.props.align, 'end')
+  assert.equal(menu.props.portal, true)
+
+  // 选择器本体：button + chevron，显示当前值，`aria-haspopup` 指向菜单。
+  const selector = menu.props.anchor
+  assert.equal(selector.type, 'button')
+  assert.equal(selector.props.className, 'dcl-selector')
+  assert.equal(selector.props.disabled, false)
+  assert.equal(selector.props['aria-haspopup'], 'menu')
+  assert.equal(selector.children[0], 'currency.USD')
+  assert.equal(selector.children[1].props.className, 'dcl-chevron')
+
+  menu.props.onSelect('CNY')
   assert.deepEqual(writes, [['currency', 'CNY']])
 })
 
-test('命名空间不可用时设置行不占用设置页，且下拉禁用', async () => {
+test('命名空间不可用时设置行不占用设置页，且选择器禁用', async () => {
   const unavailable = createHarness({ snapshot: UNAVAILABLE })
   createPlugin(await loadBundle()).apply(unavailable.ctx)
   const row = unavailable.slots.faceOf('settings.general.item')
   assert.equal(row.component(composeProps(row.options.inject(), { t: (key) => key })), null)
 
-  // 已有 provider 但尚未就绪：保留行，禁用下拉。
+  // 已有 provider 但尚未就绪：保留行，禁用选择器。
   const loading = createHarness({ snapshot: { status: 'loading', value: undefined, writable: false } })
   createPlugin(await loadBundle()).apply(loading.ctx)
   const pendingRow = loading.slots.faceOf('settings.general.item')
   const tree = pendingRow.component(composeProps(pendingRow.options.inject(), { t: (key) => key }))
-  assert.equal(tree.children[1].props.disabled, true)
-  assert.equal(tree.children[1].props.value, 'CNY')
+  const menu = menuOf(tree)
+  assert.equal(menu.props.anchor.props.disabled, true)
+  assert.equal(menu.props.selectedId, 'CNY')
 })
