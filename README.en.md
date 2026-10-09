@@ -16,12 +16,7 @@ Historical messages are included in the calculation.
 * 🔢 Display token usage
 * 📚 Include historical messages in the calculation
 * 🕐 Automatically apply the appropriate DeepSeek pricing based on date and time
-* 🖱️ Hover over the cost badge to view:
-
-  * Input tokens
-  * Output tokens
-  * Flash cost
-  * Pro cost
+* 🖱️ Hover over the cost badge to see the model in use and its price
 * 💱 Support CNY / USD display
 
   * Settings → General → Cost Currency

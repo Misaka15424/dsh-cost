@@ -66,19 +66,29 @@ function createSlots() {
  * 迷你设置后端：
  * - `configForms`（DSH 0.2+，按 profile 条目 id 取 volatile 配置表单）；
  * - `settingsScope`（DSH 0.1.5 及以前，按命名空间绑定用户设置文档）；
- * - `none`：两者都缺席，插件只应注册徽标。
+ * - `none`：两者都缺席，设置行注册后应自行渲染 null；
+ * - `late`：configForms 在 apply 之后才出现（0.2 里 ui-settings 可能晚于本插件），
+ *   用 inject 回调模拟它上线。
  */
 function createHarness({ backend = 'configForms', snapshot = READY_USD } = {}) {
   const slots = createSlots()
   const dictionaries = []
   const writes = []
   const requested = []
+  const lateInjections = []
+  let attached = backend !== 'late'
   const scope = {
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
     set: (field, value) => {
       writes.push([field, value])
       return Promise.resolve()
+    },
+  }
+  const configForms = {
+    get(namespace) {
+      requested.push(namespace)
+      return scope
     },
   }
   const ctx = {
@@ -93,13 +103,10 @@ function createHarness({ backend = 'configForms', snapshot = READY_USD } = {}) {
           bind: (ns) => (key) => `${ns}.${key}`,
         }
       }
-      if (name === 'configForms' && backend === 'configForms') {
-        return {
-          get(namespace) {
-            requested.push(namespace)
-            return scope
-          },
-        }
+      if (name === 'configForms') {
+        if (backend === 'configForms') return configForms
+        if (backend === 'late' && attached) return configForms
+        return undefined
       }
       if (name === 'settingsScope' && backend === 'settingsScope') {
         return {
@@ -111,12 +118,20 @@ function createHarness({ backend = 'configForms', snapshot = READY_USD } = {}) {
       }
       return undefined
     },
+    inject(names, callback) {
+      if (names.includes('configForms')) lateInjections.push(callback)
+    },
     effect(callback) {
       const disposer = callback()
       return typeof disposer === 'function' ? disposer : () => {}
     },
   }
-  return { ctx, slots, dictionaries, writes, requested }
+  /** 模拟 ui-settings 上线：configForms 出现并触发等待中的 inject 回调。 */
+  const startConfigForms = () => {
+    attached = true
+    for (const callback of lateInjections.splice(0)) callback(ctx)
+  }
+  return { ctx, slots, dictionaries, writes, requested, startConfigForms }
 }
 
 async function loadBundle({ dateNow } = {}) {
@@ -240,11 +255,14 @@ test('DSH 0.2+ 经 configForms 按条目 id 取表单（货币行照常注册）
   assert.deepEqual(writes, [['currency', 'CNY']])
 })
 
-test('缺少设置服务（configForms / settingsScope 均无）时只注册徽标，且货币回落默认值', async () => {
+test('缺少设置服务时徽标照常，设置行注册但自行渲染 null', async () => {
   const { ctx, slots } = createHarness({ backend: 'none' })
   createPlugin(await loadBundle()).apply(ctx)
 
-  assert.deepEqual(slots.registrations.map((entry) => entry.name), ['conversation.input.right'])
+  assert.deepEqual(
+    slots.registrations.map((entry) => entry.name),
+    ['conversation.input.right', 'settings.general.item'],
+  )
 
   const badge = slots.faceOf('conversation.input.right')
   const view = { complete: true, cost: 6, costUsd: 0.84, tokens: {}, byModel: [], latest: null }
@@ -254,6 +272,28 @@ test('缺少设置服务（configForms / settingsScope 均无）时只注册徽�
     t: (key) => key,
   }))
   assert.equal(amountText(tree), '¥6.00')
+
+  const row = slots.faceOf('settings.general.item')
+  assert.equal(row.component(composeProps(row.options.inject(), { t: (key) => key })), null)
+})
+
+test('设置服务晚于插件就绪时，货币行仍会出现（0.2 的 ui-settings 顺序）', async () => {
+  const { ctx, slots, startConfigForms, writes } = createHarness({ backend: 'late' })
+  createPlugin(await loadBundle()).apply(ctx)
+
+  // 服务尚未上线：注入面给不可用快照，行不渲染。
+  const row = slots.faceOf('settings.general.item')
+  const before = row.component(composeProps(row.options.inject(), { t: (key) => key }))
+  assert.equal(before, null)
+
+  // ui-settings 上线后：注入面接上真实表单，同一行立刻渲染出来。
+  startConfigForms()
+  const after = row.component(composeProps(row.options.inject(), { t: (key) => key }))
+  const menu = menuOf(after)
+  assert.equal(menu.props.selectedId, 'USD')
+
+  menu.props.onSelect('CNY')
+  assert.deepEqual(writes, [['currency', 'CNY']])
 })
 
 test('DSH 0.1.5 的 settingsScope 后端仍可用（旧版本回退路径）', async () => {
@@ -302,6 +342,64 @@ test('提示文案的当前时段跟随法定节假日（客户端与 Host 同�
     t: (key) => key,
   }))
   assert.match(workdayTree.children[0].props['aria-label'], /currentNew · peak/)
+})
+
+test('悬浮提示只有两行：当前模型 + 它的价格（用量明细已移除）', async () => {
+  const { ctx, slots } = createHarness({ snapshot: READY_CNY })
+  createPlugin(await loadBundle()).apply(ctx)
+
+  const badge = slots.faceOf('conversation.input.right')
+  const view = {
+    complete: true,
+    cost: 0.0978,
+    costUsd: 0.0147,
+    tokens: { inputTokens: 42932, outputTokens: 11443 },
+    byModel: [],
+    latest: {
+      model: 'deepseek-flash',
+      rate: { mode: 'offpeak', inputHit: 0.02, inputMiss: 1, output: 4 },
+      rateUsd: { mode: 'offpeak', inputHit: 0.003, inputMiss: 0.15, output: 0.6 },
+    },
+  }
+  const tree = badge.component(composeProps(badge.options.inject(), {
+    useProjection: () => view,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+
+  assert.equal(
+    tree.children[0].props['aria-label'],
+    'model deepseek-flash\noffpeak · rateHit ¥0.02/M · rateMiss ¥1/M · rateOutput ¥4/M',
+  )
+})
+
+test('USD 下提示里的价格换成官方美元价', async () => {
+  const { ctx, slots } = createHarness({ snapshot: READY_USD })
+  createPlugin(await loadBundle()).apply(ctx)
+
+  const badge = slots.faceOf('conversation.input.right')
+  const view = {
+    complete: true,
+    cost: 0.0978,
+    costUsd: 0.0147,
+    tokens: {},
+    byModel: [],
+    latest: {
+      model: 'deepseek-flash',
+      rate: { mode: 'peak', inputHit: 0.04, inputMiss: 2, output: 8 },
+      rateUsd: { mode: 'peak', inputHit: 0.006, inputMiss: 0.3, output: 1.2 },
+    },
+  }
+  const tree = badge.component(composeProps(badge.options.inject(), {
+    useProjection: () => view,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+
+  assert.equal(
+    tree.children[0].props['aria-label'],
+    'model deepseek-flash\npeak · rateHit $0.006/M · rateMiss $0.3/M · rateOutput $1.2/M',
+  )
 })
 
 test('徽标按 Host 设置里的货币渲染金额', async () => {
