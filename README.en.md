@@ -20,11 +20,11 @@ Historical messages are included in the calculation.
 * 💱 Support CNY / USD display
 
   * Settings → General → Cost Currency
-* `≈` indicates that the displayed cost is an estimate
+* `≈` means the amount covers only the priced part
 
 ## Pricing Scope
 
-Costs are calculated only for DSH's built-in official DeepSeek models. Other models are marked with `≈` to indicate estimated costs.
+Costs are calculated only for DSH's built-in official DeepSeek models — both the API-key route and the signed-in account route. Calls outside that scope are not priced, and the badge marks the amount with `≈` to show it covers only the priced part.
 
 ## Installation
 

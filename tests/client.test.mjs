@@ -311,6 +311,31 @@ test('DSH 0.1.5 的 settingsScope 后端仍可用（旧版本回退路径）', a
   assert.equal(amountText(tree), '¥6.00')
 })
 
+test('最近一次调用不在计价范围内时，提示显式标注「未计价模型」', async () => {
+  const { ctx, slots } = createHarness({ snapshot: READY_CNY })
+  createPlugin(await loadBundle()).apply(ctx)
+
+  const badge = slots.faceOf('conversation.input.right')
+  const view = {
+    complete: false,
+    cost: 0,
+    costUsd: 0,
+    tokens: {},
+    byModel: [],
+    latest: { model: 'claude-opus', rate: null, rateUsd: null },
+  }
+  const tree = badge.component(composeProps(badge.options.inject(), {
+    useProjection: () => view,
+    useSession: (select) => select({ running: false }),
+    t: (key) => key,
+  }))
+
+  assert.equal(
+    tree.children[0].props['aria-label'],
+    'model claude-opus\nunpricedModel · currentNew · offpeak',
+  )
+})
+
 test('提示文案的当前时段跟随法定节假日（客户端与 Host 同一份口径）', async () => {
   const holiday = Date.UTC(2026, 9, 1, 2) // 2026-10-01 北京 10:00（周四），节内空闲
   const workday = Date.UTC(2026, 9, 8, 2) // 2026-10-08 北京 10:00（周四），节后高峰

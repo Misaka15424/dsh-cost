@@ -80,6 +80,36 @@ test('接受官方现行 Flash 模型名与仍被路由到 Flash 的旧名', () 
   assert.equal(familyOf('deepseek-v4-flash-vision'), null)
 })
 
+test('官方账号路由 deepseek-account 同样按官方价目表计价', () => {
+  // 账号路由与 API Key 路由共用 transport 与模型目录，只是凭证不同（按量扣余额）。
+  assert.equal(isOfficialDeepSeekModel('deepseek-account', 'deepseek-flash'), true)
+  assert.equal(isOfficialDeepSeekModel('deepseek-account', 'deepseek-v4-pro'), true)
+  assert.equal(isOfficialDeepSeekModel('DeepSeek-Account', 'deepseek-flash'), true)
+  // 非官方 provider 即使模型名相同也不计价。
+  assert.equal(isOfficialDeepSeekModel('deepseek-accountx', 'deepseek-flash'), false)
+  assert.equal(isOfficialDeepSeekModel('third-party', 'deepseek-flash'), false)
+})
+
+test('账号路由的调用在投影里被计价（不再计入 unpricedTokens）', () => {
+  let state = costLogProjection.init()
+  const at = Date.UTC(2026, 9, 8, 2) // 2026-10-08（周四）北京 10:00，高峰
+  state = costLogProjection.apply(state, event('request/header', 0, at - 10, {
+    header: { config: { provider: 'deepseek-account', model: 'deepseek-flash' }, reason: 'initial' },
+  }))
+  state = costLogProjection.apply(state, event('assistant/message', 1, at, {
+    turn: 1,
+    step: 1,
+    message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+    usage: usage(1_000_000, 1_000_000),
+  }))
+  const value = costLogProjection.wire.view(state)
+  assert.equal(value.cost, 10) // 高峰未命中 2 + 输出 8
+  assert.equal(value.complete, true)
+  assert.equal(value.latest.rate.mode, 'peak')
+  assert.equal(value.byModel[0].priced, true)
+  assert.equal(value.byModel[0].provider, 'deepseek-account')
+})
+
 test('高峰时段仅限北京时间周一至周五，周末全天空闲', () => {
   const bj = (month, day, hour, minute = 0) => Date.UTC(2026, month, day, hour - 8, minute)
   // 2026-09-11 是周五：9:00-12:00 与 14:00-18:00 为高峰。

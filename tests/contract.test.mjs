@@ -56,8 +56,8 @@ test('投影定义满足现行 ProjectionDefinition 契约', () => {
   )
   // 价格表调整会改变同一事件的折叠结果，因此必须递增 stateVersion，让持久化
   // cache 行失效并整体重折；否则旧会话会沿用旧价、只有新步骤用新价。
-  // v4：高峰时段排除中国法定节假日。
-  assert.ok(costLogProjection.stateVersion >= 4, '计价规则变更后 stateVersion 应已递增')
+  // v4：高峰时段排除中国法定节假日。v5：计价范围加入官方账号路由 deepseek-account。
+  assert.ok(costLogProjection.stateVersion >= 5, '计价规则变更后 stateVersion 应已递增')
 })
 
 test('投影状态可 JSON 往返并通过 stateSchema（projection cache 前置条件）', () => {
